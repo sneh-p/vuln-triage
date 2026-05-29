@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: triage-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vuln_triage}
+      POSTGRES_USER: ${POSTGRES_USER:-triage_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_here}
+    ports:
+      - "5412:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-triage_user} -d ${POSTGRES_DB:-vuln_triage}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  coordinator:
+    build:
+      context: ..
+      dockerfile: agents/coordinator/Dockerfile
+    container_name: triage-coordinator
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../secrets/.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+    volumes:
+      - ../secrets:/root/vuln-triage/secrets
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ingestor:
+    build:
+      context: ..
+      dockerfile: agents/ingestor/Dockerfile
+    container_name: triage-ingestor
+    env_file:
+      - ../secrets/.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - SCANNER_EXPORT_DIR=/data/scanner-exports
+    volumes:
+      - ../data:/data
+      - ../secrets:/root/vuln-triage/secrets
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  enricher:
+    build:
+      context: ..
+      dockerfile: agents/enricher/Dockerfile
+    container_name: triage-enricher
+    env_file:
+      - ../secrets/.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  correlator:
+    build:
+      context: ..
+      dockerfile: agents/correlator/Dockerfile
+    container_name: triage-correlator
+    env_file:
+      - ../secrets/.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ticketer:
+    build:
+      context: ..
+      dockerfile: agents/ticketer/Dockerfile
+    container_name: triage-ticketer
+    env_file:
+      - ../secrets/.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+    volumes:
+      - ../secrets:/root/vuln-triage/secrets
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
